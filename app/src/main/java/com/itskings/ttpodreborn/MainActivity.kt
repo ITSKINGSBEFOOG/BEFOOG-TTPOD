@@ -135,7 +135,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     }
 
     private fun makeSearch(hintText: String) = EditText(this).apply {
-        hint = hintText; singleLine = true
+        hint = hintText; setSingleLine(true)
         inputType = InputType.TYPE_CLASS_TEXT
         setTextColor(0xFFFFFFFF.toInt()); setHintTextColor(0xFFAAA7B8.toInt())
         setPadding(12, 8, 12, 8)
