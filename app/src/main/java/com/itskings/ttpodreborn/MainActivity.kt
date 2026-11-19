@@ -2,18 +2,19 @@ package com.itskings.ttpodreborn
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.media.MediaPlayer
-import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
 import android.text.Editable
 import android.text.TextWatcher
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
@@ -42,22 +43,31 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var lastX = 0f
     private var lastY = 0f
     private var lastZ = 0f
+
+    private lateinit var root: LinearLayout
+    private lateinit var homeView: LinearLayout
+    private lateinit var listView: LinearLayout
+    private lateinit var playerView: LinearLayout
     private lateinit var tvTitle: TextView
     private lateinit var tvArtist: TextView
+    private lateinit var tvBigArt: TextView
     private lateinit var btnPlay: Button
-    private lateinit var btnNext: Button
-    private lateinit var btnPrev: Button
-    private lateinit var btnShuffle: Button
-    private lateinit var btnRepeat: Button
-    private lateinit var btnShakeNext: Button
-    private lateinit var btnShakePrev: Button
-    private lateinit var etSearch: EditText
-    private lateinit var songContainer: LinearLayout
-    private lateinit var folderRow: LinearLayout
+    private lateinit var btnPlayMini: Button
     private lateinit var seekBar: SeekBar
     private lateinit var tvTime: TextView
-    private lateinit var btnSleep: Button
+    private lateinit var tvTimeLeft: TextView
+    private lateinit var etSearch: EditText
+    private lateinit var songContainer: LinearLayout
     private lateinit var tvFolderTitle: TextView
+    private lateinit var tvMiniTitle: TextView
+    private lateinit var btnShuffle: Button
+    private lateinit var btnRepeat: Button
+    private lateinit var btnSleep: Button
+    private lateinit var btnFav: Button
+    private lateinit var tvCountSongs: TextView
+    private lateinit var tvCountFav: TextView
+    private lateinit var tvCountFolders: TextView
+
     private val handler = Handler(Looper.getMainLooper())
     private val updateRunnable = object : Runnable {
         override fun run() {
@@ -65,7 +75,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 val mp = mediaPlayer
                 if (mp != null && mp.isPlaying) {
                     seekBar.progress = mp.currentPosition
-                    tvTime.text = "${formatTime(mp.currentPosition)} / ${formatTime(mp.duration)}"
+                    tvTime.text = formatTime(mp.currentPosition)
+                    tvTimeLeft.text = formatTime(mp.duration)
                 }
             } catch (e: Exception) {}
             handler.postDelayed(this, 500)
@@ -74,44 +85,145 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        playlists["Big Papa"] = mutableListOf()
-        playlists["Big Mama"] = mutableListOf()
-        val scroll = ScrollView(this)
-        val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 28, 28, 28) }
-        scroll.addView(layout)
-        setContentView(scroll)
-        layout.addView(TextView(this).apply { text = "🎵 BEFOOG TTPOD"; textSize = 26f })
-        tvTitle = TextView(this).apply { text = "No song playing"; textSize = 20f }
-        tvArtist = TextView(this).apply { text = "BEFOOG - Big Papa & Big Mama"; textSize = 14f }
-        layout.addView(tvTitle); layout.addView(tvArtist)
-        seekBar = SeekBar(this); layout.addView(seekBar)
-        tvTime = TextView(this).apply { text = "00:00 / 00:00" }; layout.addView(tvTime)
-        val r1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        btnPrev = Button(this).apply { text = "⏮ PREV" }
-        btnPlay = Button(this).apply { text = "▶ Play" }
-        btnNext = Button(this).apply { text = "NEXT ⏭" }
-        r1.addView(btnPrev); r1.addView(btnPlay); r1.addView(btnNext); layout.addView(r1)
-        val r2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        btnShuffle = Button(this).apply { text = "Shuffle: OFF" }
-        btnRepeat = Button(this).apply { text = "Repeat: OFF" }
-        r2.addView(btnShuffle); r2.addView(btnRepeat); layout.addView(r2)
-        val r3 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        btnShakeNext = Button(this).apply { text = "Shake Next: ON" }
-        btnShakePrev = Button(this).apply { text = "Shake Prev: ON" }
-        r3.addView(btnShakeNext); r3.addView(btnShakePrev); layout.addView(r3)
-        btnSleep = Button(this).apply { text = "💤 Sleep Timer: OFF" }; layout.addView(btnSleep)
-        layout.addView(TextView(this).apply { text = "📂 FOLDERS - Tap to open"; textSize = 18f; setPadding(0, 24, 0, 8) })
-        folderRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }; layout.addView(folderRow)
-        layout.addView(TextView(this).apply { text = "🔍 Search Inside This Folder"; textSize = 16f; setPadding(0, 16, 0, 4) })
-        etSearch = EditText(this).apply { hint = "Search inside this folder..." }; layout.addView(etSearch)
-        tvFolderTitle = TextView(this).apply { text = "📁 ALL SONGS"; textSize = 18f; setPadding(0, 16, 0, 8) }; layout.addView(tvFolderTitle)
-        songContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; layout.addView(songContainer)
+        playlists["BEFOOG 1"] = mutableListOf()
+        playlists["BEFOOG 2"] = mutableListOf()
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
+
+        root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.parseColor("#0B2A2E")) }
+        setContentView(root)
+
+        // ===== HOME VIEW - Library like old TTPod =====
+        homeView = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(20, 20, 20, 20) }
+        val topTabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val t1 = TextView(this).apply { text = "Library"; textSize = 18f; setTextColor(Color.WHITE); setPadding(20, 16, 20, 16); setBackgroundColor(Color.parseColor("#3A5A5E")) }
+        val t2 = TextView(this).apply { text = "Online"; textSize = 18f; setTextColor(Color.LTGRAY); setPadding(20, 16, 20, 16) }
+        val t3 = TextView(this).apply { text = "Recommend"; textSize = 18f; setTextColor(Color.LTGRAY); setPadding(20, 16, 20, 16) }
+        topTabs.addView(t1); topTabs.addView(t2); topTabs.addView(t3)
+        homeView.addView(topTabs)
+
+        homeView.addView(TextView(this).apply { text = "🎵  BEFOOG TTPOD 2"; textSize = 24f; setTextColor(Color.WHITE); setPadding(0, 20, 0, 4) })
+        homeView.addView(TextView(this).apply { text = "Your music, your way - BEFOOG style"; textSize = 13f; setTextColor(Color.LTGRAY) })
+
+        val grid1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 24, 0, 8) }
+        val itemSongs = makeHomeItem("💿", "My Songs", "0 Medias") { openFolder("ALL SONGS") }
+        tvCountSongs = itemSongs.getChildAt(2) as TextView
+        grid1.addView(itemSongs)
+        val itemFav = makeHomeItem("❤️", "My Favorites", "BEFOOG 1") { openFolder("BEFOOG 1") }
+        tvCountFav = itemFav.getChildAt(2) as TextView
+        grid1.addView(itemFav)
+        val itemFolders = makeHomeItem("📁", "Folders", "2 Folders") { showAllFolders() }
+        tvCountFolders = itemFolders.getChildAt(2) as TextView
+        grid1.addView(itemFolders)
+        val itemNew = makeHomeItem("📄+", "New Playlist", "Create") { showCreatePlaylist() }
+        grid1.addView(itemNew)
+        homeView.addView(grid1)
+
+        val grid2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 8, 0, 8) }
+        grid2.addView(makeHomeItem("⬇️", "Download", "0 Tasks") { Toast.makeText(this, "Download coming soon", Toast.LENGTH_SHORT).show() })
+        grid2.addView(makeHomeItem("🎨", "Custom Ho..", "Theme") { Toast.makeText(this, "BEFOOG TTPOD 2 Theme", Toast.LENGTH_SHORT).show() })
+        grid2.addView(makeHomeItem("💤", "Sleep Timer", "OFF") { startSleepTimer() })
+        grid2.addView(makeHomeItem("📂", "BEFOOG 2", "Playlist 2") { openFolder("BEFOOG 2") })
+        homeView.addView(grid2)
+
+        homeView.addView(TextView(this).apply { text = "🔥  QUICK PLAY"; textSize = 16f; setTextColor(Color.WHITE); setPadding(0, 24, 0, 8) })
+        val quick = Button(this).apply { text = "▶  SHUFFLE PLAY ALL SONGS"; setBackgroundColor(Color.parseColor("#00C8A0")); setTextColor(Color.WHITE) }
+        quick.setOnClickListener {
+            if (allSongs.isNotEmpty()) {
+                isShuffle = true
+                filteredSongs = allSongs.toMutableList()
+                currentIndex = Random.nextInt(filteredSongs.size)
+                playSong(filteredSongs[currentIndex])
+                showPlayer()
+            } else {
+                Toast.makeText(this, "No songs found yet", Toast.LENGTH_SHORT).show()
+            }
+        }
+        homeView.addView(quick)
+        homeView.addView(TextView(this).apply { text = "📱 Shake phone = Next song  •  Shake ON"; textSize = 13f; setTextColor(Color.LTGRAY); setPadding(0, 16, 0, 0) })
+
+        // ===== LIST VIEW =====
+        listView = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; setPadding(20, 20, 20, 20) }
+        val backHome = Button(this).apply { text = "⬅  BACK TO LIBRARY" }
+        backHome.setOnClickListener { showHome() }
+        listView.addView(backHome)
+        tvFolderTitle = TextView(this).apply { text = "📁 ALL SONGS"; textSize = 20f; setTextColor(Color.WHITE); setPadding(0, 16, 0, 8) }
+        listView.addView(tvFolderTitle)
+        etSearch = EditText(this).apply { hint = "Search inside this folder..."; setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
+        listView.addView(etSearch)
+        val scrollList = ScrollView(this)
+        songContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        scrollList.addView(songContainer)
+        listView.addView(scrollList)
+
+        // ===== PLAYER VIEW - Full screen like old TTPod =====
+        playerView = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; setBackgroundColor(Color.parseColor("#0E3A3E")); setPadding(20, 16, 20, 16) }
+        val playerTop = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val backBtn = Button(this).apply { text = "⬅"; textSize = 16f }
+        backBtn.setOnClickListener { showHome() }
+        val topTitleBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
+        tvTitle = TextView(this).apply { text = "No song playing"; textSize = 19f; setTextColor(Color.WHITE) }
+        tvArtist = TextView(this).apply { text = "BEFOOG"; textSize = 14f; setTextColor(Color.LTGRAY) }
+        topTitleBox.addView(tvTitle); topTitleBox.addView(tvArtist)
+        btnFav = Button(this).apply { text = "♡"; textSize = 20f }
+        btnFav.setOnClickListener { toggleFav() }
+        val btnShare = Button(this).apply { text = "↗"; textSize = 18f }
+        btnShare.setOnClickListener { Toast.makeText(this, "Share coming soon", Toast.LENGTH_SHORT).show() }
+        playerTop.addView(backBtn); playerTop.addView(topTitleBox); playerTop.addView(btnFav); playerTop.addView(btnShare)
+        playerView.addView(playerTop)
+
+        tvBigArt = TextView(this).apply { text = "💿\n\nBEFOOG\nTTPOD 2"; textSize = 44f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); setPadding(0, 80, 0, 80) }
+        playerView.addView(tvBigArt)
+        playerView.addView(TextView(this).apply { text = "Good TTPod"; textSize = 14f; gravity = Gravity.CENTER; setTextColor(Color.LTGRAY); setPadding(0, 0, 0, 16) })
+
+        val timeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        tvTime = TextView(this).apply { text = "00:00"; setTextColor(Color.WHITE); layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
+        tvTimeLeft = TextView(this).apply { text = "00:00"; setTextColor(Color.WHITE); gravity = Gravity.END }
+        timeRow.addView(tvTime); timeRow.addView(tvTimeLeft)
+        playerView.addView(timeRow)
+        seekBar = SeekBar(this); playerView.addView(seekBar)
+
+        val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(0, 20, 0, 12) }
+        btnRepeat = Button(this).apply { text = "↺"; textSize = 22f }
+        val btnPrev = Button(this).apply { text = "⏮"; textSize = 26f }
+        btnPlay = Button(this).apply { text = "▶"; textSize = 30f }
+        val btnNext = Button(this).apply { text = "⏭"; textSize = 26f }
+        btnShuffle = Button(this).apply { text = "🔀"; textSize = 22f }
+        controls.addView(btnRepeat); controls.addView(btnPrev); controls.addView(btnPlay); controls.addView(btnNext); controls.addView(btnShuffle)
+        playerView.addView(controls)
+
+        btnSleep = Button(this).apply { text = "💤 Sleep Timer: OFF" }
+        playerView.addView(btnSleep)
+        val shakeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 12, 0, 0) }
+        val btnShakeNext = Button(this).apply { text = "Shake Next: ON"; layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
+        val btnShakePrev = Button(this).apply { text = "Shake Prev: ON"; layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
+        shakeRow.addView(btnShakeNext); shakeRow.addView(btnShakePrev)
+        playerView.addView(shakeRow)
+        playerView.addView(TextView(this).apply { text = "BEFOOG 1  •  BEFOOG 2  •  BEFOOG TTPOD 2"; gravity = Gravity.CENTER; setTextColor(Color.LTGRAY); setPadding(0, 16, 0, 0) })
+
+        // ===== MINI PLAYER - bottom like old TTPod =====
+        val mini = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setBackgroundColor(Color.BLACK); setPadding(12, 12, 12, 12); gravity = Gravity.CENTER_VERTICAL }
+        tvMiniTitle = TextView(this).apply { text = "No song"; setTextColor(Color.WHITE); layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
+        val miniPrev = Button(this).apply { text = "⏮" }
+        btnPlayMini = Button(this).apply { text = "▶" }
+        val miniNext = Button(this).apply { text = "⏭" }
+        val miniFav = Button(this).apply { text = "♡" }
+        mini.addView(tvMiniTitle); mini.addView(miniPrev); mini.addView(btnPlayMini); mini.addView(miniNext); mini.addView(miniFav)
+        mini.setOnClickListener { if (currentIndex >= 0) showPlayer() }
+
+        root.addView(homeView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(listView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(playerView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(mini)
+
         btnPlay.setOnClickListener { togglePlay() }
+        btnPlayMini.setOnClickListener { togglePlay() }
         btnNext.setOnClickListener { playNext() }
+        miniNext.setOnClickListener { playNext() }
         btnPrev.setOnClickListener { playPrev() }
-        btnShuffle.setOnClickListener { isShuffle = !isShuffle; btnShuffle.text = if (isShuffle) "Shuffle: ON" else "Shuffle: OFF" }
-        btnRepeat.setOnClickListener { repeatMode = (repeatMode + 1) % 3; btnRepeat.text = when (repeatMode) { 1 -> "Repeat: ALL"; 2 -> "Repeat: ONE"; else -> "Repeat: OFF" } }
+        miniPrev.setOnClickListener { playPrev() }
+        miniFav.setOnClickListener { toggleFav() }
+        btnShuffle.setOnClickListener { isShuffle = !isShuffle; btnShuffle.text = if (isShuffle) "🔀 ON" else "🔀"; Toast.makeText(this, if (isShuffle) "Shuffle ON" else "Shuffle OFF", Toast.LENGTH_SHORT).show() }
+        btnRepeat.setOnClickListener { repeatMode = (repeatMode + 1) % 3; btnRepeat.text = when (repeatMode) { 1 -> "↺ ALL"; 2 -> "↺ 1"; else -> "↺" } }
         btnShakeNext.setOnClickListener { shakeNextOn = !shakeNextOn; btnShakeNext.text = if (shakeNextOn) "Shake Next: ON" else "Shake Next: OFF" }
         btnShakePrev.setOnClickListener { shakePrevOn = !shakePrevOn; btnShakePrev.text = if (shakePrevOn) "Shake Prev: ON" else "Shake Prev: OFF" }
         btnSleep.setOnClickListener { startSleepTimer() }
@@ -125,29 +237,41 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             override fun onStartTrackingTouch(s: SeekBar?) {}
             override fun onStopTrackingTouch(s: SeekBar?) { try { mediaPlayer?.seekTo(s?.progress ?: 0) } catch (e: Exception) {} }
         })
-        refreshFolders(); checkPermission(); handler.post(updateRunnable)
+        checkPermission()
+        handler.post(updateRunnable)
     }
 
-    private fun refreshFolders() {
-        folderRow.removeAllViews()
-        val names = mutableListOf("ALL SONGS"); names.addAll(playlists.keys)
-        for (name in names) {
-            val b = Button(this).apply { text = if (name == currentFolder) "✅ $name" else name; textSize = 12f }
-            b.setOnClickListener { currentFolder = name; etSearch.setText(""); refreshFolders(); refreshSongs() }
-            folderRow.addView(b)
-        }
-        val btnNew = Button(this).apply { text = "+ NEW"; textSize = 12f }
-        btnNew.setOnClickListener { showCreatePlaylist() }
-        folderRow.addView(btnNew)
+    private fun makeHomeItem(emoji: String, title: String, sub: String, onClick: () -> Unit): LinearLayout {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f); setPadding(8, 8, 8, 8) }
+        box.addView(TextView(this).apply { text = emoji; textSize = 36f; gravity = Gravity.CENTER })
+        box.addView(TextView(this).apply { text = title; textSize = 13f; setTextColor(Color.WHITE); gravity = Gravity.CENTER })
+        box.addView(TextView(this).apply { text = sub; textSize = 11f; setTextColor(Color.LTGRAY); gravity = Gravity.CENTER })
+        box.setOnClickListener { onClick() }
+        return box
+    }
+
+    private fun showHome() { homeView.visibility = View.VISIBLE; listView.visibility = View.GONE; playerView.visibility = View.GONE }
+    private fun showList() { homeView.visibility = View.GONE; listView.visibility = View.VISIBLE; playerView.visibility = View.GONE }
+    private fun showPlayer() { homeView.visibility = View.GONE; listView.visibility = View.GONE; playerView.visibility = View.VISIBLE }
+
+    private fun openFolder(name: String) { currentFolder = name; etSearch.setText(""); refreshSongs(); showList() }
+
+    private fun showAllFolders() {
+        val names = mutableListOf("ALL SONGS")
+        names.addAll(playlists.keys)
+        AlertDialog.Builder(this).setTitle("Folders").setItems(names.toTypedArray()) { _, w -> openFolder(names[w]) }.show()
     }
 
     private fun showCreatePlaylist() {
-        val input = EditText(this).apply { hint = "e.g. Big Papa 2" }
-        AlertDialog.Builder(this).setTitle("Create New Folder / Playlist").setView(input)
+        val input = EditText(this).apply { hint = "e.g. BEFOOG 3" }
+        AlertDialog.Builder(this).setTitle("Create New Playlist").setView(input)
             .setPositiveButton("Create") { _, _ ->
                 val n = input.text.toString().trim()
                 if (n.isNotEmpty() && !playlists.containsKey(n)) {
-                    playlists[n] = mutableListOf(); currentFolder = n; refreshFolders(); refreshSongs()
+                    playlists[n] = mutableListOf()
+                    currentFolder = n
+                    refreshSongs()
+                    showList()
                     Toast.makeText(this, "Created $n", Toast.LENGTH_SHORT).show()
                 }
             }.setNegativeButton("Cancel", null).show()
@@ -157,7 +281,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val perm = if (android.os.Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
         if (ContextCompat.checkSelfPermission(this, perm) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(perm), 101)
-        } else { loadSongs() }
+        } else {
+            loadSongs()
+        }
     }
 
     override fun onRequestPermissionsResult(code: Int, perms: Array<String>, res: IntArray) {
@@ -175,9 +301,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 val iT = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
                 val iA = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
                 val iD = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
-                while (c.moveToNext()) { allSongs.add(Song(c.getLong(iId), c.getString(iT) ?: "Unknown", c.getString(iA) ?: "Unknown", c.getString(iD) ?: "")) }
+                while (c.moveToNext()) {
+                    allSongs.add(Song(c.getLong(iId), c.getString(iT) ?: "Unknown", c.getString(iA) ?: "Unknown", c.getString(iD) ?: ""))
+                }
             }
         } catch (e: Exception) {}
+        tvCountSongs.text = "${allSongs.size} Medias"
+        tvCountFav.text = "${playlists["BEFOOG 1"]?.size ?: 0} Medias"
+        tvCountFolders.text = "${playlists.size} Folders"
         refreshSongs()
     }
 
@@ -193,26 +324,44 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         songContainer.removeAllViews()
         tvFolderTitle.text = "📁 $currentFolder (${filteredSongs.size} songs)"
         if (filteredSongs.isEmpty()) {
-            songContainer.addView(TextView(this).apply { text = if (currentFolder == "ALL SONGS") "No songs found" else "No songs in this folder yet"; setPadding(0, 16, 0, 16) })
+            songContainer.addView(TextView(this).apply { text = "No songs in this folder yet"; setTextColor(Color.WHITE); setPadding(0, 16, 0, 16) })
             return
         }
         for (song in filteredSongs) {
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(8, 8, 8, 12) }
-            val tv = TextView(this).apply { text = "${song.title}\n${song.artist}"; textSize = 15f; layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
-            val btnAdd = Button(this).apply { text = "+"; textSize = 12f }
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(8, 12, 8, 12); gravity = Gravity.CENTER_VERTICAL }
+            val tv = TextView(this).apply { text = "${song.title}\n${song.artist}"; textSize = 15f; setTextColor(Color.WHITE); layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
+            val btnAdd = Button(this).apply { text = "+ BEFOOG" }
             btnAdd.setOnClickListener { showAddToPlaylist(song) }
-            tv.setOnClickListener { currentIndex = filteredSongs.indexOf(song); playSong(song) }
+            tv.setOnClickListener { currentIndex = filteredSongs.indexOf(song); playSong(song); showPlayer() }
             row.addView(tv); row.addView(btnAdd); songContainer.addView(row)
         }
     }
 
     private fun showAddToPlaylist(song: Song) {
-        if (playlists.isEmpty()) { Toast.makeText(this, "Create playlist first", Toast.LENGTH_SHORT).show(); return }
         val names = playlists.keys.toTypedArray()
-        AlertDialog.Builder(this).setTitle("Add to playlist").setItems(names) { _, which ->
+        AlertDialog.Builder(this).setTitle("Add to BEFOOG").setItems(names) { _, which ->
             val name = names[which]
-            if (!playlists[name]!!.contains(song)) { playlists[name]!!.add(song); Toast.makeText(this, "Added to $name", Toast.LENGTH_SHORT).show() }
+            if (!playlists[name]!!.contains(song)) {
+                playlists[name]!!.add(song)
+                Toast.makeText(this, "Added to $name", Toast.LENGTH_SHORT).show()
+                tvCountFav.text = "${playlists["BEFOOG 1"]?.size ?: 0} Medias"
+            }
         }.show()
+    }
+
+    private fun toggleFav() {
+        if (currentIndex < 0 || filteredSongs.isEmpty()) return
+        val song = filteredSongs[currentIndex]
+        val list = playlists["BEFOOG 1"]!!
+        if (list.contains(song)) {
+            list.remove(song)
+            btnFav.text = "♡"
+            Toast.makeText(this, "Removed from BEFOOG 1", Toast.LENGTH_SHORT).show()
+        } else {
+            list.add(song)
+            btnFav.text = "♥"
+            Toast.makeText(this, "Added to BEFOOG 1 ♥", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun playSong(song: Song) {
@@ -222,17 +371,25 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 setDataSource(song.path)
                 prepare()
                 start()
-                setOnCompletionListener { playNext() }
+                setOnCompletionListener { if (repeatMode == 2) playSong(song) else playNext() }
             }
-            tvTitle.text = song.title; tvArtist.text = song.artist
-            btnPlay.text = "⏸ Pause"
+            tvTitle.text = song.title
+            tvArtist.text = song.artist
+            tvMiniTitle.text = "${song.title} - ${song.artist}"
+            btnPlay.text = "⏸"
+            btnPlayMini.text = "⏸"
             seekBar.max = mediaPlayer?.duration ?: 0
-        } catch (e: Exception) { Toast.makeText(this, "Cannot play this song", Toast.LENGTH_SHORT).show() }
+            tvBigArt.text = "🎵\n\n${song.title.take(18)}"
+            val list = playlists["BEFOOG 1"]!!
+            btnFav.text = if (list.contains(song)) "♥" else "♡"
+        } catch (e: Exception) {
+            Toast.makeText(this, "Cannot play this song", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun togglePlay() {
         val mp = mediaPlayer ?: return
-        if (mp.isPlaying) { mp.pause(); btnPlay.text = "▶ Play" } else { mp.start(); btnPlay.text = "⏸ Pause" }
+        if (mp.isPlaying) { mp.pause(); btnPlay.text = "▶"; btnPlayMini.text = "▶" } else { mp.start(); btnPlay.text = "⏸"; btnPlayMini.text = "⏸" }
     }
 
     private fun playNext() {
@@ -251,28 +408,30 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val options = arrayOf("Cancel Timer", "5 mins", "10 mins", "15 mins", "30 mins", "60 mins")
         AlertDialog.Builder(this).setTitle("Sleep Timer").setItems(options) { _, which ->
             val mins = when (which) { 1 -> 5L; 2 -> 10L; 3 -> 15L; 4 -> 30L; 5 -> 60L; else -> 0L }
-            if (mins == 0L) { btnSleep.text = "💤 Sleep Timer: OFF"; Toast.makeText(this, "Timer cancelled", Toast.LENGTH_SHORT).show(); return@setItems }
+            if (mins == 0L) { btnSleep.text = "💤 Sleep Timer: OFF"; return@setItems }
             btnSleep.text = "💤 Sleep Timer: ${mins} min"
             handler.postDelayed({
                 try { mediaPlayer?.pause() } catch (e: Exception) {}
-                btnPlay.text = "▶ Play"; btnSleep.text = "💤 Sleep Timer: OFF"
+                btnPlay.text = "▶"
+                btnPlayMini.text = "▶"
+                btnSleep.text = "💤 Sleep Timer: OFF"
             }, mins * 60 * 1000L)
             Toast.makeText(this, "Music will stop in $mins mins", Toast.LENGTH_SHORT).show()
         }.show()
     }
 
     private fun formatTime(ms: Int): String {
-        val total = ms / 1000
-        val m = total / 60
-        val s = total % 60
-        return String.format("%02d:%02d", m, s)
+        val t = ms / 1000
+        return String.format("%02d:%02d", t / 60, t % 60)
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
         if (event == null || event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
         val now = System.currentTimeMillis()
         if (now - lastShakeTime < 800) return
-        val x = event.values[0]; val y = event.values[1]; val z = event.values[2]
+        val x = event.values[0]
+        val y = event.values[1]
+        val z = event.values[2]
         val speed = sqrt((x - lastX) * (x - lastX) + (y - lastY) * (y - lastY) + (z - lastZ) * (z - lastZ))
         lastX = x; lastY = y; lastZ = z
         if (speed > 12) {
