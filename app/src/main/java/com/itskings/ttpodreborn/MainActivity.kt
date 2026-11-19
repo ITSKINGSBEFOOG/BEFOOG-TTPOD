@@ -6,6 +6,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -19,6 +20,7 @@ import android.media.MediaMetadata
 import android.media.MediaPlayer
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -37,7 +39,7 @@ import androidx.core.content.ContextCompat
 import kotlin.math.sqrt
 import kotlin.random.Random
 
-data class Song(val id: Long, val title: String, val artist: String, val path: String)
+data class Song(val id: Long, val title: String, val artist: String, val path: String, val uri: Uri)
 
 class MainActivity : AppCompatActivity(), SensorEventListener {
     companion object {
@@ -57,6 +59,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var shakePrevOn = true
     private var playlists = mutableMapOf<String, MutableList<Song>>()
     private var currentFolder = "ALL SONGS"
+    private var showCount = 100
     private lateinit var sensorManager: SensorManager
     private var lastShakeTime = 0L
     private var lastX = 0f
@@ -102,6 +105,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             } catch (e: Exception) {}
             handler.postDelayed(this, 500)
         }
+    }
+
+    // FIXED BACK: Player -> List, List -> Home, Home -> Exit (no crash)
+    override fun onBackPressed() {
+        try {
+            if (playerView.visibility == View.VISIBLE) { showList(); return }
+            if (listView.visibility == View.VISIBLE) { showHome(); return }
+        } catch (e: Exception) {}
+        try { super.onBackPressed() } catch (e: Exception) { finish() }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -151,12 +163,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val quick = Button(this).apply { text = "▶  SHUFFLE PLAY ALL SONGS"; setBackgroundColor(Color.parseColor("#00C8A0")); setTextColor(Color.WHITE) }
         quick.setOnClickListener {
             if (allSongs.isNotEmpty()) {
-                isShuffle = true
-                filteredSongs = allSongs.toMutableList()
+                isShuffle = true; filteredSongs = allSongs.toMutableList()
                 currentIndex = Random.nextInt(filteredSongs.size)
-                playSong(filteredSongs[currentIndex])
-                showPlayer()
-            } else Toast.makeText(this, "No songs found yet", Toast.LENGTH_SHORT).show()
+                playSong(filteredSongs[currentIndex]); showPlayer()
+            } else Toast.makeText(this, "No songs found yet - check permission Allow all", Toast.LENGTH_SHORT).show()
         }
         homeView.addView(quick)
         homeView.addView(TextView(this).apply { text = "📱 Shake phone = Next song  •  Shake ON"; textSize = 13f; setTextColor(Color.LTGRAY); setPadding(0, 16, 0, 0) })
@@ -176,8 +186,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         playerView = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; setBackgroundColor(Color.parseColor("#0E3A3E")); setPadding(20, 16, 20, 16) }
         val playerTop = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        // FIXED: Back from Player goes to List, not Home
         val backBtn = Button(this).apply { text = "⬅"; textSize = 16f }
-        backBtn.setOnClickListener { showHome() }
+        backBtn.setOnClickListener { showList() }
         val topTitleBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
         tvTitle = TextView(this).apply { text = "No song playing"; textSize = 19f; setTextColor(Color.WHITE) }
         tvArtist = TextView(this).apply { text = "BEFOOG"; textSize = 14f; setTextColor(Color.LTGRAY) }
@@ -242,7 +253,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         btnSleep.setOnClickListener { startSleepTimer() }
         etSearch.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) { filterSongs(s.toString()) }
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) { showCount = 100; filterSongs(s.toString()) }
             override fun afterTextChanged(s: Editable?) {}
         })
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -254,12 +265,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         handler.post(updateRunnable)
     }
 
-    // ===== LOCK SCREEN + NOTIFICATION =====
     private fun setupMediaSession() {
-        try {
-            mediaSession = MediaSession(this, "BEFOOG_TTPOD_2")
-            mediaSession?.isActive = true
-        } catch (e: Exception) {}
+        try { mediaSession = MediaSession(this, "BEFOOG_TTPOD_2"); mediaSession?.isActive = true } catch (e: Exception) {}
     }
     private fun createNotifChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -267,50 +274,30 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(ch)
         }
         if (Build.VERSION.SDK_INT >= 33) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 102)
-            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 102)
         }
     }
     private fun setupNotifReceiver() {
         notifReceiver = object : BroadcastReceiver() {
             override fun onReceive(c: Context?, intent: Intent?) {
-                when (intent?.action) {
-                    ACTION_PREV -> playPrev()
-                    ACTION_NEXT -> playNext()
-                    ACTION_PLAY -> togglePlay()
-                }
+                when (intent?.action) { ACTION_PREV -> playPrev(); ACTION_NEXT -> playNext(); ACTION_PLAY -> togglePlay() }
             }
         }
-        val f = IntentFilter()
-        f.addAction(ACTION_PREV); f.addAction(ACTION_PLAY); f.addAction(ACTION_NEXT)
-        if (Build.VERSION.SDK_INT >= 33) registerReceiver(notifReceiver, f, Context.RECEIVER_NOT_EXPORTED) else registerReceiver(notifReceiver, f)
+        val f = IntentFilter(); f.addAction(ACTION_PREV); f.addAction(ACTION_PLAY); f.addAction(ACTION_NEXT)
+        try { if (Build.VERSION.SDK_INT >= 33) registerReceiver(notifReceiver, f, Context.RECEIVER_NOT_EXPORTED) else registerReceiver(notifReceiver, f) } catch (e: Exception) {}
     }
     private fun showMusicNotification() {
         try {
             if (currentIndex < 0 || filteredSongs.isEmpty()) return
+            if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
             val song = filteredSongs[currentIndex]
             val isPlaying = mediaPlayer?.isPlaying == true
             mediaSession?.setMetadata(MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, song.title).putString(MediaMetadata.METADATA_KEY_ARTIST, song.artist).build())
             mediaSession?.setPlaybackState(PlaybackState.Builder().setState(if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED, mediaPlayer?.currentPosition?.toLong() ?: 0, 1f).build())
-            fun pi(action: String, code: Int): PendingIntent {
-                val i = Intent(action)
-                return PendingIntent.getBroadcast(this, code, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-            }
+            fun pi(action: String, code: Int): PendingIntent { return PendingIntent.getBroadcast(this, code, Intent(action).setPackage(packageName), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE) }
             val openIntent = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) Notification.Builder(this, "befoog_music") else Notification.Builder(this)
-            val notif = builder
-                .setContentTitle(song.title)
-                .setContentText(song.artist + " • BEFOOG TTPOD 2")
-                .setSmallIcon(android.R.drawable.ic_media_play)
-                .setContentIntent(openIntent)
-                .setOngoing(isPlaying)
-                .setVisibility(Notification.VISIBILITY_PUBLIC)
-                .setStyle(Notification.MediaStyle().setMediaSession(mediaSession?.sessionToken).setShowActionsInCompactView(0, 1, 2))
-                .addAction(android.R.drawable.ic_media_previous, "Prev", pi(ACTION_PREV, 1))
-                .addAction(if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play, "Play", pi(ACTION_PLAY, 2))
-                .addAction(android.R.drawable.ic_media_next, "Next", pi(ACTION_NEXT, 3))
-                .build()
+            val notif = builder.setContentTitle(song.title).setContentText(song.artist + " • BEFOOG TTPOD 2").setSmallIcon(android.R.drawable.ic_media_play).setContentIntent(openIntent).setOngoing(isPlaying).setVisibility(Notification.VISIBILITY_PUBLIC).setStyle(Notification.MediaStyle().setMediaSession(mediaSession?.sessionToken).setShowActionsInCompactView(0, 1, 2)).addAction(android.R.drawable.ic_media_previous, "Prev", pi(ACTION_PREV, 1)).addAction(if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play, if (isPlaying) "Pause" else "Play", pi(ACTION_PLAY, 2)).addAction(android.R.drawable.ic_media_next, "Next", pi(ACTION_NEXT, 3)).build()
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(1, notif)
         } catch (e: Exception) {}
     }
@@ -327,46 +314,30 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun showHome() { homeView.visibility = View.VISIBLE; listView.visibility = View.GONE; playerView.visibility = View.GONE }
     private fun showList() { homeView.visibility = View.GONE; listView.visibility = View.VISIBLE; playerView.visibility = View.GONE }
     private fun showPlayer() { homeView.visibility = View.GONE; listView.visibility = View.GONE; playerView.visibility = View.VISIBLE }
+    private fun openFolder(name: String) { currentFolder = name; showCount = 100; etSearch.setText(""); refreshSongs(); showList() }
 
-    private fun openFolder(name: String) { currentFolder = name; etSearch.setText(""); refreshSongs(); showList() }
-
-    // FIXED: Real phone folders - like 27 folders in old TTPod
     private fun getRealFolders(): List<String> {
         val set = linkedSetOf<String>()
-        for (s in allSongs) {
-            try {
-                val parts = s.path.split("/")
-                if (parts.size >= 2) set.add(parts[parts.size - 2])
-            } catch (e: Exception) {}
-        }
+        for (s in allSongs) { try { val parts = s.path.split("/"); if (parts.size >= 2) set.add(parts[parts.size - 2]) } catch (e: Exception) {} }
         return set.toList().sorted()
     }
     private fun showAllFolders() {
         val folders = getRealFolders()
-        if (folders.isEmpty()) { Toast.makeText(this, "No folders found yet - allow permission", Toast.LENGTH_SHORT).show(); return }
+        if (folders.isEmpty()) { Toast.makeText(this, "No folders found yet - allow permission Allow all", Toast.LENGTH_SHORT).show(); return }
         val display = mutableListOf("ALL SONGS")
         display.addAll(folders.map { "📁 $it" })
         display.addAll(playlists.keys.map { "⭐ $it" })
         AlertDialog.Builder(this).setTitle("Folders (${folders.size} Folders)").setItems(display.toTypedArray()) { _, w ->
-            when {
-                w == 0 -> openFolder("ALL SONGS")
-                w <= folders.size -> openFolder("FOLDER:" + folders[w - 1])
-                else -> openFolder(display[w].removePrefix("⭐ "))
-            }
+            when { w == 0 -> openFolder("ALL SONGS"); w <= folders.size -> openFolder("FOLDER:" + folders[w - 1]); else -> openFolder(display[w].removePrefix("⭐ ")) }
         }.show()
     }
 
     private fun showCreatePlaylist() {
         val input = EditText(this).apply { hint = "e.g. BEFOOG 3" }
-        AlertDialog.Builder(this).setTitle("Create New Playlist").setView(input)
-            .setPositiveButton("Create") { _, _ ->
-                val n = input.text.toString().trim()
-                if (n.isNotEmpty() && !playlists.containsKey(n)) {
-                    playlists[n] = mutableListOf()
-                    currentFolder = n; refreshSongs(); showList()
-                    Toast.makeText(this, "Created $n", Toast.LENGTH_SHORT).show()
-                }
-            }.setNegativeButton("Cancel", null).show()
+        AlertDialog.Builder(this).setTitle("Create New Playlist").setView(input).setPositiveButton("Create") { _, _ ->
+            val n = input.text.toString().trim()
+            if (n.isNotEmpty() && !playlists.containsKey(n)) { playlists[n] = mutableListOf(); currentFolder = n; refreshSongs(); showList(); Toast.makeText(this, "Created $n", Toast.LENGTH_SHORT).show() }
+        }.setNegativeButton("Cancel", null).show()
     }
 
     private fun checkPermission() {
@@ -378,14 +349,18 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun loadSongs() {
         allSongs.clear()
         val uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-        val proj = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.DATA)
+        val proj = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.DATA, MediaStore.Audio.Media.DURATION)
         try {
-            contentResolver.query(uri, proj, null, null, null)?.use { c ->
+            contentResolver.query(uri, proj, MediaStore.Audio.Media.DURATION + " > 10000", null, null)?.use { c ->
                 val iId = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
                 val iT = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
                 val iA = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
                 val iD = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
-                while (c.moveToNext()) allSongs.add(Song(c.getLong(iId), c.getString(iT) ?: "Unknown", c.getString(iA) ?: "Unknown", c.getString(iD) ?: ""))
+                while (c.moveToNext()) {
+                    val id = c.getLong(iId)
+                    val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+                    allSongs.add(Song(id, c.getString(iT) ?: "Unknown", c.getString(iA) ?: "Unknown", c.getString(iD) ?: "", contentUri))
+                }
             }
         } catch (e: Exception) {}
         tvCountSongs.text = "${allSongs.size} Medias"
@@ -397,10 +372,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun filterSongs(q: String) {
         val base: List<Song> = when {
             currentFolder == "ALL SONGS" -> allSongs
-            currentFolder.startsWith("FOLDER:") -> {
-                val fname = currentFolder.removePrefix("FOLDER:")
-                allSongs.filter { it.path.split("/").let { p -> p.size >= 2 && p[p.size - 2] == fname } }
-            }
+            currentFolder.startsWith("FOLDER:") -> { val fname = currentFolder.removePrefix("FOLDER:"); allSongs.filter { it.path.split("/").let { p -> p.size >= 2 && p[p.size - 2] == fname } } }
             else -> playlists[currentFolder] ?: mutableListOf()
         }
         filteredSongs = if (q.isEmpty()) base.toMutableList() else base.filter { it.title.contains(q, true) || it.artist.contains(q, true) }.toMutableList()
@@ -408,12 +380,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
     private fun refreshSongs() { filterSongs(etSearch.text.toString()) }
 
+    // FIXED: Fast load - show 100 first, Load More button
     private fun showSongs() {
         songContainer.removeAllViews()
         val displayName = if (currentFolder.startsWith("FOLDER:")) currentFolder.removePrefix("FOLDER:") else currentFolder
         tvFolderTitle.text = "📁 $displayName (${filteredSongs.size} songs)"
         if (filteredSongs.isEmpty()) { songContainer.addView(TextView(this).apply { text = "No songs in this folder yet"; setTextColor(Color.WHITE); setPadding(0, 16, 0, 16) }); return }
-        for (song in filteredSongs) {
+        val toShow = filteredSongs.take(showCount)
+        for (song in toShow) {
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(8, 12, 8, 12); gravity = Gravity.CENTER_VERTICAL }
             val tv = TextView(this).apply { text = "${song.title}\n${song.artist}"; textSize = 15f; setTextColor(Color.WHITE); layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
             val btnAdd = Button(this).apply { text = "+ BEFOOG" }
@@ -421,17 +395,18 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             tv.setOnClickListener { currentIndex = filteredSongs.indexOf(song); playSong(song); showPlayer() }
             row.addView(tv); row.addView(btnAdd); songContainer.addView(row)
         }
+        if (filteredSongs.size > showCount) {
+            val more = Button(this).apply { text = "⬇  LOAD MORE (${filteredSongs.size - showCount} remaining)" }
+            more.setOnClickListener { showCount += 200; showSongs() }
+            songContainer.addView(more)
+        }
     }
 
     private fun showAddToPlaylist(song: Song) {
         val names = playlists.keys.toTypedArray()
         AlertDialog.Builder(this).setTitle("Add to BEFOOG").setItems(names) { _, which ->
             val name = names[which]
-            if (!playlists[name]!!.contains(song)) {
-                playlists[name]!!.add(song)
-                Toast.makeText(this, "Added to $name", Toast.LENGTH_SHORT).show()
-                tvCountFav.text = "${playlists["BEFOOG 1"]?.size ?: 0} Medias"
-            }
+            if (!playlists[name]!!.contains(song)) { playlists[name]!!.add(song); Toast.makeText(this, "Added to $name", Toast.LENGTH_SHORT).show(); tvCountFav.text = "${playlists["BEFOOG 1"]?.size ?: 0} Medias" }
         }.show()
     }
 
@@ -446,31 +421,28 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun playSong(song: Song) {
         try {
             mediaPlayer?.release()
-            mediaPlayer = MediaPlayer().apply { setDataSource(song.path); prepare(); start(); setOnCompletionListener { if (repeatMode == 2) playSong(song) else playNext() } }
+            mediaPlayer = MediaPlayer()
+            mediaPlayer?.setDataSource(this, song.uri)
+            mediaPlayer?.prepare(); mediaPlayer?.start()
+            mediaPlayer?.setOnCompletionListener { if (repeatMode == 2) playSong(song) else playNext() }
             tvTitle.text = song.title; tvArtist.text = song.artist; tvMiniTitle.text = "${song.title} - ${song.artist}"
             btnPlay.text = "⏸"; btnPlayMini.text = "⏸"
             seekBar.max = mediaPlayer?.duration ?: 0
             tvBigArt.text = "🎵\n\n${song.title.take(18)}"
             btnFav.text = if (playlists["BEFOOG 1"]!!.contains(song)) "♥" else "♡"
             showMusicNotification()
-        } catch (e: Exception) { Toast.makeText(this, "Cannot play this song", Toast.LENGTH_SHORT).show() }
+        } catch (e: Exception) { Toast.makeText(this, "Cannot play this song - try another", Toast.LENGTH_SHORT).show(); try { playNext() } catch (ex: Exception) {} }
     }
 
     private fun togglePlay() {
         val mp = mediaPlayer ?: return
-        if (mp.isPlaying) { mp.pause(); btnPlay.text = "▶"; btnPlayMini.text = "▶" } else { mp.start(); btnPlay.text = "⏸"; btnPlayMini.text = "⏸" }
-        showMusicNotification()
+        try {
+            if (mp.isPlaying) { mp.pause(); btnPlay.text = "▶"; btnPlayMini.text = "▶" } else { mp.start(); btnPlay.text = "⏸"; btnPlayMini.text = "⏸" }
+            showMusicNotification()
+        } catch (e: Exception) {}
     }
-    private fun playNext() {
-        if (filteredSongs.isEmpty()) return
-        currentIndex = if (isShuffle) Random.nextInt(filteredSongs.size) else (currentIndex + 1) % filteredSongs.size
-        playSong(filteredSongs[currentIndex])
-    }
-    private fun playPrev() {
-        if (filteredSongs.isEmpty()) return
-        currentIndex = if (currentIndex <= 0) filteredSongs.size - 1 else currentIndex - 1
-        playSong(filteredSongs[currentIndex])
-    }
+    private fun playNext() { if (filteredSongs.isEmpty()) return; currentIndex = if (isShuffle) Random.nextInt(filteredSongs.size) else (currentIndex + 1) % filteredSongs.size; playSong(filteredSongs[currentIndex]) }
+    private fun playPrev() { if (filteredSongs.isEmpty()) return; currentIndex = if (currentIndex <= 0) filteredSongs.size - 1 else currentIndex - 1; playSong(filteredSongs[currentIndex]) }
 
     private fun startSleepTimer() {
         val options = arrayOf("Cancel Timer", "5 mins", "10 mins", "15 mins", "30 mins", "60 mins")
@@ -494,13 +466,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (speed > 12) { lastShakeTime = now; if (shakeNextOn) playNext() else if (shakePrevOn) playPrev() }
     }
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
-    override fun onResume() { super.onResume(); sensorManager.registerListener(this, sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_NORMAL) }
+    override fun onResume() { super.onResume(); try { sensorManager.registerListener(this, sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_NORMAL) } catch (e: Exception) {} }
     override fun onPause() { super.onPause(); try { sensorManager.unregisterListener(this) } catch (e: Exception) {} }
     override fun onDestroy() {
         super.onDestroy()
         try { notifReceiver?.let { unregisterReceiver(it) } } catch (e: Exception) {}
         try { mediaSession?.release() } catch (e: Exception) {}
         try { mediaPlayer?.release() } catch (e: Exception) {}
-        handler.removeCallbacks(updateRunnable)
+        try { handler.removeCallbacks(updateRunnable) } catch (e: Exception) {}
     }
 }
