@@ -136,7 +136,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val t3 = TextView(this).apply { text = "Recommend"; textSize = 18f; setTextColor(Color.LTGRAY); setPadding(20, 16, 20, 16) }
         topTabs.addView(t1); topTabs.addView(t2); topTabs.addView(t3)
         homeView.addView(topTabs)
-        homeView.addView(TextView(this).apply { text = "🎵  BEFOOG TTPOD 2"; textSize = 24f; setTextColor(Color.WHITE); setPadding(0, 20, 0, 4) })
+        homeView.addView(TextView(this).apply { text = "🎵  BEFOOG PLAYER"; textSize = 24f; setTextColor(Color.WHITE); setPadding(0, 20, 0, 4) })
         homeView.addView(TextView(this).apply { text = "Your music, your way - BEFOOG style"; textSize = 13f; setTextColor(Color.LTGRAY) })
 
         val grid1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 24, 0, 8) }
@@ -154,7 +154,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         val grid2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 8, 0, 8) }
         grid2.addView(makeHomeItem("⬇️", "Download", "0 Tasks") { Toast.makeText(this, "Download coming soon", Toast.LENGTH_SHORT).show() })
-        grid2.addView(makeHomeItem("🎨", "Custom Ho..", "Theme") { Toast.makeText(this, "BEFOOG TTPOD 2 Theme", Toast.LENGTH_SHORT).show() })
+        grid2.addView(makeHomeItem("🎨", "Custom Ho..", "Theme") { Toast.makeText(this, "BEFOOG PLAYER Theme", Toast.LENGTH_SHORT).show() })
         grid2.addView(makeHomeItem("💤", "Sleep Timer", "OFF") { startSleepTimer() })
         grid2.addView(makeHomeItem("📂", "BEFOOG 2", "Playlist 2") { openFolder("BEFOOG 2") })
         homeView.addView(grid2)
@@ -199,9 +199,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         btnShare.setOnClickListener { Toast.makeText(this, "Share coming soon", Toast.LENGTH_SHORT).show() }
         playerTop.addView(backBtn); playerTop.addView(topTitleBox); playerTop.addView(btnFav); playerTop.addView(btnShare)
         playerView.addView(playerTop)
-        tvBigArt = TextView(this).apply { text = "💿\n\nBEFOOG\nTTPOD 2"; textSize = 44f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); setPadding(0, 80, 0, 80) }
+        tvBigArt = TextView(this).apply { text = "💿\n\nBEFOOG\nPLAYER"; textSize = 44f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); setPadding(0, 80, 0, 80) }
         playerView.addView(tvBigArt)
-        playerView.addView(TextView(this).apply { text = "Good TTPod"; textSize = 14f; gravity = Gravity.CENTER; setTextColor(Color.LTGRAY); setPadding(0, 0, 0, 16) })
+        playerView.addView(TextView(this).apply { text = "Good Music"; textSize = 14f; gravity = Gravity.CENTER; setTextColor(Color.LTGRAY); setPadding(0, 0, 0, 16) })
         val timeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         tvTime = TextView(this).apply { text = "00:00"; setTextColor(Color.WHITE); layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
         tvTimeLeft = TextView(this).apply { text = "00:00"; setTextColor(Color.WHITE); gravity = Gravity.END }
@@ -223,7 +223,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val btnShakePrev = Button(this).apply { text = "Shake Prev: ON"; layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
         shakeRow.addView(btnShakeNext); shakeRow.addView(btnShakePrev)
         playerView.addView(shakeRow)
-        playerView.addView(TextView(this).apply { text = "BEFOOG 1  •  BEFOOG 2  •  BEFOOG TTPOD 2"; gravity = Gravity.CENTER; setTextColor(Color.LTGRAY); setPadding(0, 16, 0, 0) })
+        playerView.addView(TextView(this).apply { text = "BEFOOG 1  •  BEFOOG 2  •  BEFOOG PLAYER"; gravity = Gravity.CENTER; setTextColor(Color.LTGRAY); setPadding(0, 16, 0, 0) })
 
         val mini = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setBackgroundColor(Color.BLACK); setPadding(12, 12, 12, 12); gravity = Gravity.CENTER_VERTICAL }
         tvMiniTitle = TextView(this).apply { text = "No song"; setTextColor(Color.WHITE); layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
@@ -266,7 +266,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun setupMediaSession() {
-        try { mediaSession = MediaSession(this, "BEFOOG_TTPOD_2"); mediaSession?.isActive = true } catch (e: Exception) {}
+        try { mediaSession = MediaSession(this, "BEFOOG_PLAYER"); mediaSession?.isActive = true } catch (e: Exception) {}
     }
     private fun createNotifChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -297,7 +297,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             fun pi(action: String, code: Int): PendingIntent { return PendingIntent.getBroadcast(this, code, Intent(action).setPackage(packageName), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE) }
             val openIntent = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) Notification.Builder(this, "befoog_music") else Notification.Builder(this)
-            val notif = builder.setContentTitle(song.title).setContentText(song.artist + " • BEFOOG TTPOD 2").setSmallIcon(android.R.drawable.ic_media_play).setContentIntent(openIntent).setOngoing(isPlaying).setVisibility(Notification.VISIBILITY_PUBLIC).setStyle(Notification.MediaStyle().setMediaSession(mediaSession?.sessionToken).setShowActionsInCompactView(0, 1, 2)).addAction(android.R.drawable.ic_media_previous, "Prev", pi(ACTION_PREV, 1)).addAction(if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play, if (isPlaying) "Pause" else "Play", pi(ACTION_PLAY, 2)).addAction(android.R.drawable.ic_media_next, "Next", pi(ACTION_NEXT, 3)).build()
+            val notif = builder.setContentTitle(song.title).setContentText(song.artist + " • BEFOOG PLAYER").setSmallIcon(android.R.drawable.ic_media_play).setContentIntent(openIntent).setOngoing(isPlaying).setVisibility(Notification.VISIBILITY_PUBLIC).setStyle(Notification.MediaStyle().setMediaSession(mediaSession?.sessionToken).setShowActionsInCompactView(0, 1, 2)).addAction(android.R.drawable.ic_media_previous, "Prev", pi(ACTION_PREV, 1)).addAction(if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play, if (isPlaying) "Pause" else "Play", pi(ACTION_PLAY, 2)).addAction(android.R.drawable.ic_media_next, "Next", pi(ACTION_NEXT, 3)).build()
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(1, notif)
         } catch (e: Exception) {}
     }
