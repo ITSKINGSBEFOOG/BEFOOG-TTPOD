@@ -11,6 +11,8 @@
     <application
         android:allowBackup="true"
         android:label="BEFOOG PLAYER"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
 
@@ -25,4 +27,5 @@
         </activity>
 
     </application>
+
 </manifest>
