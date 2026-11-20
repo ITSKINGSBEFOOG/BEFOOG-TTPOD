@@ -91,6 +91,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var tvCountSongs: TextView
     private lateinit var tvCountFav: TextView
     private lateinit var tvCountFolders: TextView
+    private lateinit var playlistHomeContainer: LinearLayout
 
     private val handler = Handler(Looper.getMainLooper())
     private val updateRunnable = object : Runnable {
@@ -115,7 +116,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         try { super.onBackPressed() } catch (e: Exception) { finish() }
     }
 
-    // FIX: Handle notification clicks when activity already dey - no duplicate
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -129,6 +129,59 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             "BEFOOG_NEXT", ACTION_NEXT -> playNext()
         }
         if (intent?.action?.startsWith("BEFOOG_") == true) intent.action = null
+    }
+
+    // ===== PLAYLIST SAVE - NO MORE DISAPPEAR =====
+    private fun savePlaylists() {
+        try {
+            val prefs = getSharedPreferences("BEFOOG_PREFS", MODE_PRIVATE)
+            val editor = prefs.edit()
+            editor.putStringSet("playlist_names", playlists.keys)
+            for ((name, list) in playlists) {
+                editor.putString("playlist_$name", list.joinToString("|||") { it.path })
+            }
+            editor.apply()
+        } catch (e: Exception) {}
+    }
+
+    private fun loadPlaylists() {
+        try {
+            val prefs = getSharedPreferences("BEFOOG_PREFS", MODE_PRIVATE)
+            val names = prefs.getStringSet("playlist_names", null) ?: return
+            // If we get here, we get saved playlists - rebuild them from paths
+            for (name in names) {
+                val saved = prefs.getString("playlist_$name", "") ?: ""
+                val list = mutableListOf<Song>()
+                if (saved.isNotEmpty()) {
+                    val paths = saved.split("|||")
+                    for (p in paths) {
+                        val found = allSongs.find { it.path == p }
+                        if (found != null) list.add(found)
+                    }
+                }
+                playlists[name] = list
+            }
+        } catch (e: Exception) {}
+    }
+
+    private fun refreshPlaylistHome() {
+        try {
+            if (!::playlistHomeContainer.isInitialized) return
+            playlistHomeContainer.removeAllViews()
+            // Show all playlists together for Home - BEFOOG 1, BEFOOG 2 + your own
+            for ((name, list) in playlists) {
+                val btn = Button(this).apply {
+                    text = "⭐ $name  (${list.size} songs)  ▶"
+                    setBackgroundColor(Color.parseColor("#143A3E"))
+                    setTextColor(Color.WHITE)
+                }
+                btn.setOnClickListener { openFolder(name) }
+                playlistHomeContainer.addView(btn)
+            }
+            if (playlists.isEmpty()) {
+                playlistHomeContainer.addView(TextView(this).apply { text = "No playlist yet - Create one"; setTextColor(Color.LTGRAY) })
+            }
+        } catch (e: Exception) {}
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -174,6 +227,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         grid2.addView(makeHomeItem("💤", "Sleep Timer", "OFF") { startSleepTimer() })
         grid2.addView(makeHomeItem("📂", "BEFOOG 2", "Playlist 2") { openFolder("BEFOOG 2") })
         homeView.addView(grid2)
+
+        // NEW: MY PLAYLISTS together for Home
+        homeView.addView(TextView(this).apply { text = "⭐  MY PLAYLISTS"; textSize = 16f; setTextColor(Color.WHITE); setPadding(0, 24, 0, 8) })
+        playlistHomeContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        homeView.addView(playlistHomeContainer)
+        refreshPlaylistHome()
 
         homeView.addView(TextView(this).apply { text = "🔥  QUICK PLAY"; textSize = 16f; setTextColor(Color.WHITE); setPadding(0, 24, 0, 8) })
         val quick = Button(this).apply { text = "▶  SHUFFLE PLAY ALL SONGS"; setBackgroundColor(Color.parseColor("#00C8A0")); setTextColor(Color.WHITE) }
@@ -280,7 +339,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         handler.post(updateRunnable)
     }
 
-    // FIXED: MediaSession now get Callback + Actions, so XOS system buttons go work
     private fun setupMediaSession() {
         try {
             mediaSession = MediaSession(this, "BEFOOG_PLAYER")
@@ -318,9 +376,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             val song = filteredSongs[currentIndex]
             val isPlaying = mediaPlayer?.isPlaying == true
             mediaSession?.setMetadata(MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, song.title).putString(MediaMetadata.METADATA_KEY_ARTIST, song.artist).build())
-            // FIXED: Add ACTIONS so system knows Prev/Play/Next dey allowed
             mediaSession?.setPlaybackState(PlaybackState.Builder().setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS).setState(if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED, mediaPlayer?.currentPosition?.toLong() ?: 0, 1f).build())
-            // FIXED: Use Activity intent, no be Broadcast wey dey die. This go bring same app front, no duplicate because Manifest get singleTask
             fun pi(action: String, code: Int): PendingIntent { return PendingIntent.getActivity(this, code, Intent(this, MainActivity::class.java).apply { this.action = action; flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE) }
             val openIntent = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) Notification.Builder(this, "befoog_music") else Notification.Builder(this)
@@ -338,7 +394,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         return box
     }
 
-    private fun showHome() { homeView.visibility = View.VISIBLE; listView.visibility = View.GONE; playerView.visibility = View.GONE }
+    private fun showHome() { homeView.visibility = View.VISIBLE; listView.visibility = View.GONE; playerView.visibility = View.GONE; refreshPlaylistHome() }
     private fun showList() { homeView.visibility = View.GONE; listView.visibility = View.VISIBLE; playerView.visibility = View.GONE }
     private fun showPlayer() { homeView.visibility = View.GONE; listView.visibility = View.GONE; playerView.visibility = View.VISIBLE }
     private fun openFolder(name: String) { currentFolder = name; showCount = 100; etSearch.setText(""); refreshSongs(); showList() }
@@ -348,14 +404,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         for (s in allSongs) { try { val parts = s.path.split("/"); if (parts.size >= 2) set.add(parts[parts.size - 2]) } catch (e: Exception) {} }
         return set.toList().sorted()
     }
+    // FIXED: Folders ONLY - no playlists inside again
     private fun showAllFolders() {
         val folders = getRealFolders()
         if (folders.isEmpty()) { Toast.makeText(this, "No folders found yet - allow permission Allow all", Toast.LENGTH_SHORT).show(); return }
         val display = mutableListOf("ALL SONGS")
         display.addAll(folders.map { "📁 $it" })
-        display.addAll(playlists.keys.map { "⭐ $it" })
         AlertDialog.Builder(this).setTitle("Folders (${folders.size} Folders)").setItems(display.toTypedArray()) { _, w ->
-            when { w == 0 -> openFolder("ALL SONGS"); w <= folders.size -> openFolder("FOLDER:" + folders[w - 1]); else -> openFolder(display[w].removePrefix("⭐ ")) }
+            when { w == 0 -> openFolder("ALL SONGS"); else -> openFolder("FOLDER:" + folders[w - 1]) }
         }.show()
     }
 
@@ -363,7 +419,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val input = EditText(this).apply { hint = "e.g. BEFOOG 3" }
         AlertDialog.Builder(this).setTitle("Create New Playlist").setView(input).setPositiveButton("Create") { _, _ ->
             val n = input.text.toString().trim()
-            if (n.isNotEmpty() && !playlists.containsKey(n)) { playlists[n] = mutableListOf(); currentFolder = n; refreshSongs(); showList(); Toast.makeText(this, "Created $n", Toast.LENGTH_SHORT).show() }
+            if (n.isNotEmpty() && !playlists.containsKey(n)) { playlists[n] = mutableListOf(); savePlaylists(); refreshPlaylistHome(); currentFolder = n; refreshSongs(); showList(); Toast.makeText(this, "Created $n", Toast.LENGTH_SHORT).show() }
         }.setNegativeButton("Cancel", null).show()
     }
 
@@ -390,9 +446,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 }
             }
         } catch (e: Exception) {}
+        // Load saved playlists AFTER songs don load, so paths go match
+        loadPlaylists()
         tvCountSongs.text = "${allSongs.size} Medias"
         tvCountFav.text = "${playlists["BEFOOG 1"]?.size ?: 0} Medias"
         tvCountFolders.text = "${getRealFolders().size} Folders"
+        refreshPlaylistHome()
         refreshSongs()
     }
 
@@ -432,7 +491,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val names = playlists.keys.toTypedArray()
         AlertDialog.Builder(this).setTitle("Add to BEFOOG").setItems(names) { _, which ->
             val name = names[which]
-            if (!playlists[name]!!.contains(song)) { playlists[name]!!.add(song); Toast.makeText(this, "Added to $name", Toast.LENGTH_SHORT).show(); tvCountFav.text = "${playlists["BEFOOG 1"]?.size ?: 0} Medias" }
+            if (!playlists[name]!!.contains(song)) { playlists[name]!!.add(song); savePlaylists(); refreshPlaylistHome(); Toast.makeText(this, "Added to $name", Toast.LENGTH_SHORT).show(); tvCountFav.text = "${playlists["BEFOOG 1"]?.size ?: 0} Medias" }
         }.show()
     }
 
@@ -442,6 +501,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val list = playlists["BEFOOG 1"]!!
         if (list.contains(song)) { list.remove(song); btnFav.text = "♡"; Toast.makeText(this, "Removed from BEFOOG 1", Toast.LENGTH_SHORT).show() }
         else { list.add(song); btnFav.text = "♥"; Toast.makeText(this, "Added to BEFOOG 1 ♥", Toast.LENGTH_SHORT).show() }
+        savePlaylists(); refreshPlaylistHome()
     }
 
     private fun playSong(song: Song) {
