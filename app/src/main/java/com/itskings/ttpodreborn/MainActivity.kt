@@ -60,6 +60,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var playlists = mutableMapOf<String, MutableList<Song>>()
     private var currentFolder = "ALL SONGS"
     private var showCount = 100
+    // FIX BACK: Remember where we come from
+    private var cameFromBefoog2 = false
     private lateinit var sensorManager: SensorManager
     private var lastShakeTime = 0L
     private var lastX = 0f
@@ -112,11 +114,16 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun dp(v: Int): Int { return (v * resources.displayMetrics.density).toInt() }
 
+    // FIX BACK: Smart back - if you come from BEFOOG 2, go back to BEFOOG 2, not Home
+    private fun goBackFromList() {
+        if (cameFromBefoog2) showBefoog2() else showHome()
+    }
+
     override fun onBackPressed() {
         try {
             if (playerView.visibility == View.VISIBLE) { showList(); return }
             if (befoog2View.visibility == View.VISIBLE) { showHome(); return }
-            if (listView.visibility == View.VISIBLE) { showHome(); return }
+            if (listView.visibility == View.VISIBLE) { goBackFromList(); return }
         } catch (e: Exception) {}
         try { super.onBackPressed() } catch (e: Exception) { finish() }
     }
@@ -219,7 +226,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 } catch (e: Exception) {}
                 savePlaylists()
                 refreshBefoog2()
-                if (currentFolder == name) { showHome() }
+                if (currentFolder == name) { showBefoog2() }
                 Toast.makeText(this, "Deleted $name", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Cancel", null).show()
@@ -266,19 +273,17 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
-    // BEFOOG 2 - All playlists dey inside here only
     private fun refreshBefoog2() {
         try {
             if (!::befoog2Container.isInitialized) return
             befoog2Container.removeAllViews()
-            // BEFOOG 1 - Favorites, e dey inside BEFOOG 2 too so Home go free
             val b1 = playlists["BEFOOG 1"] ?: mutableListOf()
             val btn1 = Button(this).apply {
                 text = "❤️ BEFOOG 1  (${b1.size} songs)  ▶"
                 setBackgroundColor(Color.parseColor("#143A3E"))
                 setTextColor(Color.WHITE)
             }
-            btn1.setOnClickListener { openFolder("BEFOOG 1") }
+            btn1.setOnClickListener { cameFromBefoog2 = true; openFolder("BEFOOG 1") }
             befoog2Container.addView(btn1)
             val others = playlists.keys.filter { it != "BEFOOG 1" && it != "BEFOOG 2" }.sorted()
             if (others.isEmpty()) {
@@ -291,7 +296,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     setBackgroundColor(Color.parseColor("#143A3E"))
                     setTextColor(Color.WHITE)
                 }
-                btn.setOnClickListener { openFolder(name) }
+                btn.setOnClickListener { cameFromBefoog2 = true; openFolder(name) }
                 btn.setOnLongClickListener { showPlaylistOptions(name); true }
                 befoog2Container.addView(btn)
             }
@@ -314,6 +319,18 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             minWidth = 0
             minimumWidth = 0
             layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
+        }
+    }
+
+    // FIX SHUFFLE: Make control button small with weight so all 5 fit
+    private fun controlBtn(text: String, size: Float): Button {
+        return Button(this).apply {
+            this.text = text
+            textSize = size
+            setPadding(0, 0, 0, 0)
+            minWidth = 0
+            minimumWidth = 0
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
     }
 
@@ -347,10 +364,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         homeView.addView(TextView(this).apply { text = "Your music, your way - BEFOOG style"; textSize = 13f; setTextColor(Color.LTGRAY) })
 
         val grid1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 24, 0, 8) }
-        val itemSongs = makeHomeItem("💿", "My Songs", "0 Medias") { openFolder("ALL SONGS") }
+        val itemSongs = makeHomeItem("💿", "My Songs", "0 Medias") { cameFromBefoog2 = false; openFolder("ALL SONGS") }
         tvCountSongs = itemSongs.getChildAt(2) as TextView
         grid1.addView(itemSongs)
-        val itemFav = makeHomeItem("❤️", "My Favorites", "BEFOOG 1") { openFolder("BEFOOG 1") }
+        val itemFav = makeHomeItem("❤️", "My Favorites", "BEFOOG 1") { cameFromBefoog2 = true; openFolder("BEFOOG 1") }
         tvCountFav = itemFav.getChildAt(2) as TextView
         grid1.addView(itemFav)
         val itemFolders = makeHomeItem("📁", "Folders", "0 Folders") { showAllFolders() }
@@ -366,11 +383,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         grid2.addView(makeHomeItem("📂", "BEFOOG 2", "All Playlists") { showBefoog2() })
         homeView.addView(grid2)
 
-        // HOME FREE - No MY PLAYLISTS here again! All playlists don move to BEFOOG 2
         homeView.addView(TextView(this).apply { text = "🔥  QUICK PLAY"; textSize = 16f; setTextColor(Color.WHITE); setPadding(0, 32, 0, 8) })
         val quick = Button(this).apply { text = "▶  SHUFFLE PLAY ALL SONGS"; setBackgroundColor(Color.parseColor("#00C8A0")); setTextColor(Color.WHITE) }
         quick.setOnClickListener {
             if (allSongs.isNotEmpty()) {
+                cameFromBefoog2 = false
                 isShuffle = true; filteredSongs = allSongs.toMutableList()
                 currentIndex = Random.nextInt(filteredSongs.size)
                 playSong(filteredSongs[currentIndex]); showPlayer()
@@ -396,8 +413,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         refreshBefoog2()
 
         listView = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; setPadding(dp(20), dp(100), dp(20), dp(16)) }
-        val backHome = Button(this).apply { text = "⬅  BACK TO LIBRARY" }
-        backHome.setOnClickListener { showHome() }
+        // FIX BACK: Back button inside playlist go to BEFOOG 2, not Home
+        val backHome = Button(this).apply { text = "⬅  BACK" }
+        backHome.setOnClickListener { goBackFromList() }
         listView.addView(backHome)
         tvFolderTitle = TextView(this).apply { text = "📁 ALL SONGS"; textSize = 20f; setTextColor(Color.WHITE); setPadding(0, 16, 0, 8) }
         listView.addView(tvFolderTitle)
@@ -439,12 +457,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         timeRow.addView(tvTime); timeRow.addView(tvTimeLeft)
         playerView.addView(timeRow)
         seekBar = SeekBar(this); seekBar.setPadding(dp(4), 0, dp(4), 0); playerView.addView(seekBar)
+        // FIX SHUFFLE: Controls with weight 1 each - all 5 go fit, shuffle no go disappear
         val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(0, 20, 0, 12) }
-        btnRepeat = Button(this).apply { text = "↺"; textSize = 20f }
-        val btnPrev = Button(this).apply { text = "⏮"; textSize = 24f }
-        btnPlay = Button(this).apply { text = "▶"; textSize = 28f }
-        val btnNext = Button(this).apply { text = "⏭"; textSize = 24f }
-        btnShuffle = Button(this).apply { text = "🔀"; textSize = 20f }
+        btnRepeat = controlBtn("↺", 20f)
+        val btnPrev = controlBtn("⏮", 24f)
+        btnPlay = controlBtn("▶", 28f)
+        val btnNext = controlBtn("⏭", 24f)
+        btnShuffle = controlBtn("🔀", 20f)
         controls.addView(btnRepeat); controls.addView(btnPrev); controls.addView(btnPlay); controls.addView(btnNext); controls.addView(btnShuffle)
         playerView.addView(controls)
         btnSleep = Button(this).apply { text = "💤 Sleep Timer: OFF" }
@@ -568,7 +587,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         val display = mutableListOf("ALL SONGS")
         display.addAll(folders.map { "📁 $it" })
         AlertDialog.Builder(this).setTitle("Folders (${folders.size} Folders)").setItems(display.toTypedArray()) { _, w ->
-            when { w == 0 -> openFolder("ALL SONGS"); else -> openFolder("FOLDER:" + folders[w - 1]) }
+            when { w == 0 -> { cameFromBefoog2 = false; openFolder("ALL SONGS") }; else -> { cameFromBefoog2 = false; openFolder("FOLDER:" + folders[w - 1]) } }
         }.show()
     }
 
