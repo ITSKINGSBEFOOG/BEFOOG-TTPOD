@@ -92,7 +92,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var tvCountFav: TextView
     private lateinit var tvCountFolders: TextView
     private lateinit var playlistHomeContainer: LinearLayout
-    private lateinit var btnDeletePlaylist: Button
 
     private val handler = Handler(Looper.getMainLooper())
     private val updateRunnable = object : Runnable {
@@ -164,7 +163,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         } catch (e: Exception) {}
     }
 
-    // ===== DELETE PLAYLIST - NEW =====
+    // ===== DELETE PLAYLIST - LONG PRESS ONLY =====
     private fun deletePlaylist(name: String) {
         if (name == "BEFOOG 1") {
             Toast.makeText(this, "BEFOOG 1 na Favorites, e no fit delete", Toast.LENGTH_SHORT).show()
@@ -277,9 +276,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         listView.addView(backHome)
         tvFolderTitle = TextView(this).apply { text = "📁 ALL SONGS"; textSize = 20f; setTextColor(Color.WHITE); setPadding(0, 16, 0, 8) }
         listView.addView(tvFolderTitle)
-        btnDeletePlaylist = Button(this).apply { text = "🗑️  DELETE THIS PLAYLIST"; setBackgroundColor(Color.parseColor("#C62828")); setTextColor(Color.WHITE); visibility = View.GONE }
-        btnDeletePlaylist.setOnClickListener { deletePlaylist(currentFolder) }
-        listView.addView(btnDeletePlaylist)
         etSearch = EditText(this).apply { hint = "Search inside this folder..."; setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
         listView.addView(etSearch)
         val scrollList = ScrollView(this)
@@ -493,12 +489,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun refreshSongs() { filterSongs(etSearch.text.toString()) }
 
     private fun showSongs() {
-        // Show DELETE button only for real playlists, hide for ALL SONGS / Folders
-        try {
-            if (::btnDeletePlaylist.isInitialized) {
-                btnDeletePlaylist.visibility = if (playlists.containsKey(currentFolder)) View.VISIBLE else View.GONE
-            }
-        } catch (e: Exception) {}
         songContainer.removeAllViews()
         val displayName = if (currentFolder.startsWith("FOLDER:")) currentFolder.removePrefix("FOLDER:") else currentFolder
         tvFolderTitle.text = "📁 $displayName (${filteredSongs.size} songs)"
