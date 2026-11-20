@@ -131,7 +131,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (intent?.action?.startsWith("BEFOOG_") == true) intent.action = null
     }
 
-    // ===== PLAYLIST SAVE - NO MORE DISAPPEAR =====
     private fun savePlaylists() {
         try {
             val prefs = getSharedPreferences("BEFOOG_PREFS", MODE_PRIVATE)
@@ -163,7 +162,43 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         } catch (e: Exception) {}
     }
 
-    // ===== DELETE PLAYLIST - LONG PRESS ONLY =====
+    // ===== PLAYLIST: RENAME / DELETE + SONG: SHARE / REMOVE + PLAYER + ADD =====
+    private fun showPlaylistOptions(name: String) {
+        val options = arrayOf("✏️  Rename Playlist", "🗑️  Delete Playlist")
+        AlertDialog.Builder(this).setTitle(name).setItems(options) { _, which ->
+            if (which == 0) renamePlaylist(name) else deletePlaylist(name)
+        }.show()
+    }
+
+    private fun renamePlaylist(oldName: String) {
+        if (oldName == "BEFOOG 1") {
+            Toast.makeText(this, "BEFOOG 1 na Favorites, e no fit rename", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val input = EditText(this).apply { hint = oldName; setText(oldName) }
+        AlertDialog.Builder(this).setTitle("Rename $oldName").setView(input)
+            .setPositiveButton("Rename") { _, _ ->
+                val newName = input.text.toString().trim()
+                if (newName.isEmpty() || newName == oldName) return@setPositiveButton
+                if (playlists.containsKey(newName)) {
+                    Toast.makeText(this, "$newName don already exist", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val list = playlists.remove(oldName) ?: mutableListOf()
+                playlists[newName] = list
+                try {
+                    val prefs = getSharedPreferences("BEFOOG_PREFS", MODE_PRIVATE)
+                    prefs.edit().remove("playlist_$oldName").apply()
+                } catch (e: Exception) {}
+                savePlaylists()
+                if (currentFolder == oldName) currentFolder = newName
+                refreshPlaylistHome()
+                refreshSongs()
+                Toast.makeText(this, "Renamed to $newName", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null).show()
+    }
+
     private fun deletePlaylist(name: String) {
         if (name == "BEFOOG 1") {
             Toast.makeText(this, "BEFOOG 1 na Favorites, e no fit delete", Toast.LENGTH_SHORT).show()
@@ -186,6 +221,47 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             .setNegativeButton("Cancel", null).show()
     }
 
+    private fun removeSongFromPlaylist(song: Song, playlistName: String) {
+        val list = playlists[playlistName] ?: return
+        AlertDialog.Builder(this).setTitle("Remove song?")
+            .setMessage("Remove ${song.title} from $playlistName?")
+            .setPositiveButton("Remove") { _, _ ->
+                list.remove(song)
+                savePlaylists()
+                refreshPlaylistHome()
+                refreshSongs()
+                Toast.makeText(this, "Removed ${song.title}", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    private fun shareSong(song: Song) {
+        try {
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "audio/*"
+                putExtra(Intent.EXTRA_STREAM, song.uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                putExtra(Intent.EXTRA_TEXT, "${song.title} - ${song.artist} • Shared from BEFOOG PLAYER")
+            }
+            startActivity(Intent.createChooser(intent, "Share ${song.title} via BEFOOG"))
+        } catch (e: Exception) {
+            Toast.makeText(this, "Cannot share this song", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun showSongOptions(song: Song) {
+        val isPlaylist = playlists.containsKey(currentFolder)
+        if (isPlaylist) {
+            val options = arrayOf("↗️  Share Song", "🗑️  Remove from $currentFolder")
+            AlertDialog.Builder(this).setTitle(song.title).setItems(options) { _, which ->
+                if (which == 0) shareSong(song) else removeSongFromPlaylist(song, currentFolder)
+            }.show()
+        } else {
+            val options = arrayOf("↗️  Share Song")
+            AlertDialog.Builder(this).setTitle(song.title).setItems(options) { _, _ -> shareSong(song) }.show()
+        }
+    }
+
     private fun refreshPlaylistHome() {
         try {
             if (!::playlistHomeContainer.isInitialized) return
@@ -198,7 +274,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 }
                 btn.setOnClickListener { openFolder(name) }
                 btn.setOnLongClickListener {
-                    deletePlaylist(name)
+                    showPlaylistOptions(name)
                     true
                 }
                 playlistHomeContainer.addView(btn)
@@ -293,9 +369,18 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         topTitleBox.addView(tvTitle); topTitleBox.addView(tvArtist)
         btnFav = Button(this).apply { text = "♡"; textSize = 20f }
         btnFav.setOnClickListener { toggleFav() }
+        // NEW: + ADD TO PLAYLIST BUTTON FOR PLAYER
+        val btnAddPlayer = Button(this).apply { text = "+"; textSize = 20f }
+        btnAddPlayer.setOnClickListener {
+            if (currentIndex >= 0 && filteredSongs.isNotEmpty()) {
+                showAddToPlaylist(filteredSongs[currentIndex])
+            } else Toast.makeText(this, "No song playing", Toast.LENGTH_SHORT).show()
+        }
         val btnShare = Button(this).apply { text = "↗"; textSize = 18f }
-        btnShare.setOnClickListener { Toast.makeText(this, "Share coming soon", Toast.LENGTH_SHORT).show() }
-        playerTop.addView(backBtn); playerTop.addView(topTitleBox); playerTop.addView(btnFav); playerTop.addView(btnShare)
+        btnShare.setOnClickListener {
+            if (currentIndex >= 0 && filteredSongs.isNotEmpty()) shareSong(filteredSongs[currentIndex]) else Toast.makeText(this, "No song playing", Toast.LENGTH_SHORT).show()
+        }
+        playerTop.addView(backBtn); playerTop.addView(topTitleBox); playerTop.addView(btnFav); playerTop.addView(btnAddPlayer); playerTop.addView(btnShare)
         playerView.addView(playerTop)
         tvBigArt = TextView(this).apply { text = "💿\n\nBEFOOG\nPLAYER"; textSize = 44f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); setPadding(0, 80, 0, 80) }
         playerView.addView(tvBigArt)
@@ -500,6 +585,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             val btnAdd = Button(this).apply { text = "+ BEFOOG" }
             btnAdd.setOnClickListener { showAddToPlaylist(song) }
             tv.setOnClickListener { currentIndex = filteredSongs.indexOf(song); playSong(song); showPlayer() }
+            tv.setOnLongClickListener { showSongOptions(song); true }
+            row.setOnLongClickListener { showSongOptions(song); true }
             row.addView(tv); row.addView(btnAdd); songContainer.addView(row)
         }
         if (filteredSongs.size > showCount) {
