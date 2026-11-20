@@ -92,6 +92,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var tvCountFav: TextView
     private lateinit var tvCountFolders: TextView
     private lateinit var playlistHomeContainer: LinearLayout
+    private lateinit var btnDeletePlaylist: Button
 
     private val handler = Handler(Looper.getMainLooper())
     private val updateRunnable = object : Runnable {
@@ -148,7 +149,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         try {
             val prefs = getSharedPreferences("BEFOOG_PREFS", MODE_PRIVATE)
             val names = prefs.getStringSet("playlist_names", null) ?: return
-            // If we get here, we get saved playlists - rebuild them from paths
             for (name in names) {
                 val saved = prefs.getString("playlist_$name", "") ?: ""
                 val list = mutableListOf<Song>()
@@ -164,11 +164,33 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         } catch (e: Exception) {}
     }
 
+    // ===== DELETE PLAYLIST - NEW =====
+    private fun deletePlaylist(name: String) {
+        if (name == "BEFOOG 1") {
+            Toast.makeText(this, "BEFOOG 1 na Favorites, e no fit delete", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!playlists.containsKey(name)) return
+        AlertDialog.Builder(this).setTitle("Delete $name?")
+            .setMessage("Delete playlist $name? Songs inside no go delete, only playlist.")
+            .setPositiveButton("Delete") { _, _ ->
+                playlists.remove(name)
+                try {
+                    val prefs = getSharedPreferences("BEFOOG_PREFS", MODE_PRIVATE)
+                    prefs.edit().remove("playlist_$name").apply()
+                } catch (e: Exception) {}
+                savePlaylists()
+                refreshPlaylistHome()
+                if (currentFolder == name) { showHome() }
+                Toast.makeText(this, "Deleted $name", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null).show()
+    }
+
     private fun refreshPlaylistHome() {
         try {
             if (!::playlistHomeContainer.isInitialized) return
             playlistHomeContainer.removeAllViews()
-            // Show all playlists together for Home - BEFOOG 1, BEFOOG 2 + your own
             for ((name, list) in playlists) {
                 val btn = Button(this).apply {
                     text = "⭐ $name  (${list.size} songs)  ▶"
@@ -176,6 +198,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     setTextColor(Color.WHITE)
                 }
                 btn.setOnClickListener { openFolder(name) }
+                btn.setOnLongClickListener {
+                    deletePlaylist(name)
+                    true
+                }
                 playlistHomeContainer.addView(btn)
             }
             if (playlists.isEmpty()) {
@@ -228,7 +254,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         grid2.addView(makeHomeItem("📂", "BEFOOG 2", "Playlist 2") { openFolder("BEFOOG 2") })
         homeView.addView(grid2)
 
-        // NEW: MY PLAYLISTS together for Home
         homeView.addView(TextView(this).apply { text = "⭐  MY PLAYLISTS"; textSize = 16f; setTextColor(Color.WHITE); setPadding(0, 24, 0, 8) })
         playlistHomeContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         homeView.addView(playlistHomeContainer)
@@ -252,6 +277,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         listView.addView(backHome)
         tvFolderTitle = TextView(this).apply { text = "📁 ALL SONGS"; textSize = 20f; setTextColor(Color.WHITE); setPadding(0, 16, 0, 8) }
         listView.addView(tvFolderTitle)
+        btnDeletePlaylist = Button(this).apply { text = "🗑️  DELETE THIS PLAYLIST"; setBackgroundColor(Color.parseColor("#C62828")); setTextColor(Color.WHITE); visibility = View.GONE }
+        btnDeletePlaylist.setOnClickListener { deletePlaylist(currentFolder) }
+        listView.addView(btnDeletePlaylist)
         etSearch = EditText(this).apply { hint = "Search inside this folder..."; setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
         listView.addView(etSearch)
         val scrollList = ScrollView(this)
@@ -404,7 +432,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         for (s in allSongs) { try { val parts = s.path.split("/"); if (parts.size >= 2) set.add(parts[parts.size - 2]) } catch (e: Exception) {} }
         return set.toList().sorted()
     }
-    // FIXED: Folders ONLY - no playlists inside again
     private fun showAllFolders() {
         val folders = getRealFolders()
         if (folders.isEmpty()) { Toast.makeText(this, "No folders found yet - allow permission Allow all", Toast.LENGTH_SHORT).show(); return }
@@ -446,7 +473,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 }
             }
         } catch (e: Exception) {}
-        // Load saved playlists AFTER songs don load, so paths go match
         loadPlaylists()
         tvCountSongs.text = "${allSongs.size} Medias"
         tvCountFav.text = "${playlists["BEFOOG 1"]?.size ?: 0} Medias"
@@ -467,6 +493,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun refreshSongs() { filterSongs(etSearch.text.toString()) }
 
     private fun showSongs() {
+        // Show DELETE button only for real playlists, hide for ALL SONGS / Folders
+        try {
+            if (::btnDeletePlaylist.isInitialized) {
+                btnDeletePlaylist.visibility = if (playlists.containsKey(currentFolder)) View.VISIBLE else View.GONE
+            }
+        } catch (e: Exception) {}
         songContainer.removeAllViews()
         val displayName = if (currentFolder.startsWith("FOLDER:")) currentFolder.removePrefix("FOLDER:") else currentFolder
         tvFolderTitle.text = "📁 $displayName (${filteredSongs.size} songs)"
