@@ -107,13 +107,28 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
-    // FIXED BACK: Player -> List, List -> Home, Home -> Exit (no crash)
     override fun onBackPressed() {
         try {
             if (playerView.visibility == View.VISIBLE) { showList(); return }
             if (listView.visibility == View.VISIBLE) { showHome(); return }
         } catch (e: Exception) {}
         try { super.onBackPressed() } catch (e: Exception) { finish() }
+    }
+
+    // FIX: Handle notification clicks when activity already dey - no duplicate
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleNotificationAction(intent)
+    }
+
+    private fun handleNotificationAction(intent: Intent?) {
+        when (intent?.action) {
+            "BEFOOG_PREV", ACTION_PREV -> playPrev()
+            "BEFOOG_PLAY", ACTION_PLAY -> togglePlay()
+            "BEFOOG_NEXT", ACTION_NEXT -> playNext()
+        }
+        if (intent?.action?.startsWith("BEFOOG_") == true) intent.action = null
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -125,6 +140,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         setupMediaSession()
         setupNotifReceiver()
         createNotifChannel()
+        handleNotificationAction(intent)
 
         root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.parseColor("#0B2A2E")) }
         setContentView(root)
@@ -186,7 +202,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         playerView = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; setBackgroundColor(Color.parseColor("#0E3A3E")); setPadding(20, 16, 20, 16) }
         val playerTop = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        // FIXED: Back from Player goes to List, not Home
         val backBtn = Button(this).apply { text = "⬅"; textSize = 16f }
         backBtn.setOnClickListener { showList() }
         val topTitleBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
@@ -265,8 +280,18 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         handler.post(updateRunnable)
     }
 
+    // FIXED: MediaSession now get Callback + Actions, so XOS system buttons go work
     private fun setupMediaSession() {
-        try { mediaSession = MediaSession(this, "BEFOOG_PLAYER"); mediaSession?.isActive = true } catch (e: Exception) {}
+        try {
+            mediaSession = MediaSession(this, "BEFOOG_PLAYER")
+            mediaSession?.setCallback(object : MediaSession.Callback() {
+                override fun onPlay() { togglePlay() }
+                override fun onPause() { togglePlay() }
+                override fun onSkipToNext() { playNext() }
+                override fun onSkipToPrevious() { playPrev() }
+            })
+            mediaSession?.isActive = true
+        } catch (e: Exception) {}
     }
     private fun createNotifChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -293,11 +318,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             val song = filteredSongs[currentIndex]
             val isPlaying = mediaPlayer?.isPlaying == true
             mediaSession?.setMetadata(MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, song.title).putString(MediaMetadata.METADATA_KEY_ARTIST, song.artist).build())
-            mediaSession?.setPlaybackState(PlaybackState.Builder().setState(if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED, mediaPlayer?.currentPosition?.toLong() ?: 0, 1f).build())
-            fun pi(action: String, code: Int): PendingIntent { return PendingIntent.getBroadcast(this, code, Intent(action).setPackage(packageName), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE) }
-            val openIntent = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            // FIXED: Add ACTIONS so system knows Prev/Play/Next dey allowed
+            mediaSession?.setPlaybackState(PlaybackState.Builder().setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS).setState(if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED, mediaPlayer?.currentPosition?.toLong() ?: 0, 1f).build())
+            // FIXED: Use Activity intent, no be Broadcast wey dey die. This go bring same app front, no duplicate because Manifest get singleTask
+            fun pi(action: String, code: Int): PendingIntent { return PendingIntent.getActivity(this, code, Intent(this, MainActivity::class.java).apply { this.action = action; flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE) }
+            val openIntent = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) Notification.Builder(this, "befoog_music") else Notification.Builder(this)
-            val notif = builder.setContentTitle(song.title).setContentText(song.artist + " • BEFOOG PLAYER").setSmallIcon(android.R.drawable.ic_media_play).setContentIntent(openIntent).setOngoing(isPlaying).setVisibility(Notification.VISIBILITY_PUBLIC).setStyle(Notification.MediaStyle().setMediaSession(mediaSession?.sessionToken).setShowActionsInCompactView(0, 1, 2)).addAction(android.R.drawable.ic_media_previous, "Prev", pi(ACTION_PREV, 1)).addAction(if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play, if (isPlaying) "Pause" else "Play", pi(ACTION_PLAY, 2)).addAction(android.R.drawable.ic_media_next, "Next", pi(ACTION_NEXT, 3)).build()
+            val notif = builder.setContentTitle(song.title).setContentText(song.artist + " • BEFOOG PLAYER").setSmallIcon(android.R.drawable.ic_media_play).setContentIntent(openIntent).setOngoing(isPlaying).setOnlyAlertOnce(true).setVisibility(Notification.VISIBILITY_PUBLIC).setStyle(Notification.MediaStyle().setMediaSession(mediaSession?.sessionToken).setShowActionsInCompactView(0, 1, 2)).addAction(android.R.drawable.ic_media_previous, "Prev", pi("BEFOOG_PREV", 1)).addAction(if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play, if (isPlaying) "Pause" else "Play", pi("BEFOOG_PLAY", 2)).addAction(android.R.drawable.ic_media_next, "Next", pi("BEFOOG_NEXT", 3)).build()
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(1, notif)
         } catch (e: Exception) {}
     }
@@ -380,7 +407,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
     private fun refreshSongs() { filterSongs(etSearch.text.toString()) }
 
-    // FIXED: Fast load - show 100 first, Load More button
     private fun showSongs() {
         songContainer.removeAllViews()
         val displayName = if (currentFolder.startsWith("FOLDER:")) currentFolder.removePrefix("FOLDER:") else currentFolder
