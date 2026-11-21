@@ -119,8 +119,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         try {
             if (currentIndex < 0 || filteredSongs.isEmpty()) return
             val song = filteredSongs[currentIndex]
-            val pos = try { mediaPlayer?.currentPosition ?: lastSavedPosition } catch (e: Exception) { lastSavedPosition }
-            val playing = try { mediaPlayer?.isPlaying == true } catch (e: Exception) { false }
+            var pos = lastSavedPosition
+            try { pos = mediaPlayer?.currentPosition ?: lastSavedPosition } catch (e: Exception) { pos = lastSavedPosition }
+            var playing = false
+            try { playing = mediaPlayer?.isPlaying == true } catch (e: Exception) { playing = false }
             getSharedPreferences("BEFOOG_STATE", MODE_PRIVATE).edit().putString("last_path", song.path).putString("last_folder", currentFolder).putInt("last_position", pos).putInt("last_index", currentIndex).putBoolean("was_playing", playing).putBoolean("has_last", true).commit()
             lastSavedPosition = pos
         } catch (e: Exception) {}
@@ -402,7 +404,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             val isPlaying = mediaPlayer?.isPlaying == true
             mediaSession?.setMetadata(MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, song.title).putString(MediaMetadata.METADATA_KEY_ARTIST, song.artist).build())
             val playState = if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
-            val playPos = try { mediaPlayer?.currentPosition?.toLong() ?: 0L } catch (e: Exception) { 0L }
+            var playPos = 0L
+            try { playPos = mediaPlayer?.currentPosition?.toLong() ?: 0L } catch (e: Exception) { playPos = 0L }
             mediaSession?.setPlaybackState(PlaybackState.Builder().setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS).setState(playState, playPos, 1f).build())
             fun pi(action: String, code: Int): PendingIntent { return PendingIntent.getActivity(this, code, Intent(this, MainActivity::class.java).apply { this.action = action; flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE) }
             val openIntent = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
