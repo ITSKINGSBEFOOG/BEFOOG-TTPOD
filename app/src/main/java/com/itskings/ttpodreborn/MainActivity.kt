@@ -61,8 +61,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var currentFolder = "ALL SONGS"
     private var showCount = 100
     private var cameFromBefoog2 = false
-    // LAST SONG MEMORY
     private var lastSavedPosition = 0
+    private var wasPlayingBeforePause = false
     private var isRestoring = false
     private lateinit var sensorManager: SensorManager
     private var lastShakeTime = 0L
@@ -104,12 +104,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         override fun run() {
             try {
                 val mp = mediaPlayer
-                if (mp != null && mp.isPlaying) {
-                    seekBar.progress = mp.currentPosition
-                    tvTime.text = formatTime(mp.currentPosition)
-                    tvTimeLeft.text = formatTime(mp.duration)
-                    // Save position every time so if app close, e no go lose am
-                    if (mp.currentPosition % 5 == 0) saveCurrentState()
+                if (mp != null) {
+                    // FIX: Save EVERY 500ms, no condition - so e no go ever lose position
+                    try { lastSavedPosition = mp.currentPosition } catch (e: Exception) {}
+                    if (mp.isPlaying) {
+                        seekBar.progress = mp.currentPosition
+                        tvTime.text = formatTime(mp.currentPosition)
+                        tvTimeLeft.text = formatTime(mp.duration)
+                    }
+                    saveCurrentState()
                 }
             } catch (e: Exception) {}
             handler.postDelayed(this, 500)
@@ -118,19 +121,22 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun dp(v: Int): Int { return (v * resources.displayMetrics.density).toInt() }
 
-    // ===== LAST SONG MEMORY - Save & Restore =====
+    // ===== STRONG MEMORY =====
     private fun saveCurrentState() {
         try {
             if (currentIndex < 0 || filteredSongs.isEmpty()) return
             val song = filteredSongs[currentIndex]
-            val prefs = getSharedPreferences("BEFOOG_STATE", MODE_PRIVATE)
-            prefs.edit()
+            val pos = try { mediaPlayer?.currentPosition ?: lastSavedPosition } catch (e: Exception) { lastSavedPosition }
+            val playing = try { mediaPlayer?.isPlaying == true } catch (e: Exception) { false }
+            getSharedPreferences("BEFOOG_STATE", MODE_PRIVATE).edit()
                 .putString("last_path", song.path)
                 .putString("last_folder", currentFolder)
-                .putInt("last_position", try { mediaPlayer?.currentPosition ?: 0 } catch (e: Exception) { lastSavedPosition })
+                .putInt("last_position", pos)
                 .putInt("last_index", currentIndex)
-                .apply()
-            lastSavedPosition = try { mediaPlayer?.currentPosition ?: lastSavedPosition } catch (e: Exception) { lastSavedPosition }
+                .putBoolean("was_playing", playing)
+                .putBoolean("has_last", true)
+                .commit() // commit = save immediately, no delay!
+            lastSavedPosition = pos
         } catch (e: Exception) {}
     }
 
@@ -138,13 +144,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         try {
             if (isRestoring) return
             val prefs = getSharedPreferences("BEFOOG_STATE", MODE_PRIVATE)
+            if (!prefs.getBoolean("has_last", false)) return
             val path = prefs.getString("last_path", "") ?: ""
             if (path.isEmpty()) return
             val folder = prefs.getString("last_folder", "ALL SONGS") ?: "ALL SONGS"
             val pos = prefs.getInt("last_position", 0)
+            val wasPlaying = prefs.getBoolean("was_playing", true)
             val song = allSongs.find { it.path == path } ?: return
-            // Set the correct list (Playlist / All Songs / Folder)
             currentFolder = folder
+            cameFromBefoog2 = playlists.containsKey(folder)
             val base: List<Song> = when {
                 folder == "ALL SONGS" -> allSongs
                 folder.startsWith("FOLDER:") -> { val fname = folder.removePrefix("FOLDER:"); allSongs.filter { it.path.split("/").let { p -> p.size >= 2 && p[p.size - 2] == fname } } }
@@ -154,28 +162,33 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             currentIndex = filteredSongs.indexOf(song)
             if (currentIndex < 0) { filteredSongs = mutableListOf(song); currentIndex = 0 }
             isRestoring = true
-            // Prepare song but PAUSE for where you stop - press Play to continue
             mediaPlayer?.release()
             mediaPlayer = MediaPlayer()
             mediaPlayer?.setDataSource(this, song.uri)
             mediaPlayer?.prepare()
-            if (pos > 0 && pos < (mediaPlayer?.duration ?: 0)) {
-                mediaPlayer?.seekTo(pos)
-                lastSavedPosition = pos
-            }
+            var safePos = pos
+            val dur = mediaPlayer?.duration ?: 0
+            if (safePos > 0 && safePos < dur - 1000) mediaPlayer?.seekTo(safePos) else safePos = 0
             mediaPlayer?.setOnCompletionListener { if (repeatMode == 2) playSong(song) else playNext() }
             tvTitle.text = song.title; tvArtist.text = song.artist; tvMiniTitle.text = "${song.title} - ${song.artist}"
-            btnPlay.text = "▶"; btnPlayMini.text = "▶"
-            seekBar.max = mediaPlayer?.duration ?: 0
-            seekBar.progress = pos
-            tvTime.text = formatTime(pos)
-            tvTimeLeft.text = formatTime(mediaPlayer?.duration ?: 0)
+            seekBar.max = dur
+            seekBar.progress = safePos
+            tvTime.text = formatTime(safePos)
+            tvTimeLeft.text = formatTime(dur)
             btnFav.text = if (playlists["BEFOOG 1"]!!.contains(song)) "♥" else "♡"
             tvBigArt.text = "💿"
+            // FIX: If e dey play before you comot, auto-play again!
+            if (wasPlaying) {
+                mediaPlayer?.start()
+                btnPlay.text = "⏸"; btnPlayMini.text = "⏸"
+                Toast.makeText(this, "Continuing: ${song.title} - ${formatTime(safePos)}", Toast.LENGTH_SHORT).show()
+            } else {
+                btnPlay.text = "▶"; btnPlayMini.text = "▶"
+                Toast.makeText(this, "Paused at ${formatTime(safePos)} - Press Play to continue", Toast.LENGTH_SHORT).show()
+            }
             showMusicNotification()
-            Toast.makeText(this, "Continuing: ${song.title} - ${formatTime(pos)}", Toast.LENGTH_SHORT).show()
             isRestoring = false
-        } catch (e: Exception) { isRestoring = false }
+        } catch (e: Exception) { isRestoring = false; e.printStackTrace() }
     }
 
     private fun goBackFromList() {
@@ -688,8 +701,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         tvCountFolders.text = "${getRealFolders().size} Folders"
         refreshBefoog2()
         refreshSongs()
-        // Restore last song after songs load
-        handler.postDelayed({ restoreLastPlayed() }, 500)
+        handler.postDelayed({ restoreLastPlayed() }, 800)
     }
 
     private fun filterSongs(q: String) {
@@ -794,12 +806,26 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (speed > 12) { lastShakeTime = now; if (shakeNextOn) playNext() else if (shakePrevOn) playPrev() }
     }
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
-    override fun onResume() { super.onResume(); try { sensorManager.registerListener(this, sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_NORMAL) } catch (e: Exception) {} }
-    override fun onPause() { super.onPause(); try { sensorManager.unregisterListener(this) } catch (e: Exception) {}; saveCurrentState() }
+    override fun onResume() {
+        super.onResume()
+        try { sensorManager.registerListener(this, sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_NORMAL) } catch (e: Exception) {}
+        // If you just minimize and come back, and song was playing, make sure e still dey
+        try {
+            if (currentIndex >= 0 && mediaPlayer != null && wasPlayingBeforePause) {
+                mediaPlayer?.start(); btnPlay.text = "⏸"; btnPlayMini.text = "⏸"
+            }
+        } catch (e: Exception) {}
+    }
+    override fun onPause() {
+        super.onPause()
+        try { wasPlayingBeforePause = mediaPlayer?.isPlaying == true } catch (e: Exception) { wasPlayingBeforePause = false }
+        try { sensorManager.unregisterListener(this) } catch (e: Exception) {}
+        saveCurrentState()
+    }
     override fun onDestroy() {
         super.onDestroy()
         saveCurrentState()
-        try { notifReceiver?.let { unregisterReceiver(it) } } catch (e: Exception) {}
+        try { notifReceiver?.let { unregisterReceiver(it) } catch (e: Exception) {}
         try { mediaSession?.release() } catch (e: Exception) {}
         try { mediaPlayer?.release() } catch (e: Exception) {}
         try { handler.removeCallbacks(updateRunnable) } catch (e: Exception) {}
